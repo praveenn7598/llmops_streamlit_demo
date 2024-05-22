@@ -1,7 +1,9 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnableMap
 from langchain_openai import ChatOpenAI
+import streamlit as st 
 from langchain_core.output_parsers import StrOutputParser
+# from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 
 def get_expression_chain(
@@ -17,6 +19,12 @@ def get_expression_chain(
     )
 
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+    
+    # GEMINI_API_KEY=st.secrets["OPENAI"]["GEMINI_API_KEY"]
+    # llm = ChatGoogleGenerativeAI(
+    #     google_api_key=GEMINI_API_KEY,
+    #     model="gemini-1.5-pro-latest"
+    #     )
     
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
