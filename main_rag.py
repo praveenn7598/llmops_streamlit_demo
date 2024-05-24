@@ -7,6 +7,9 @@ from rag_chain import get_expression_chain
 from langchain_core.tracers.context import collect_runs
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
+from scripts.guards import prompt_scanner,response_scanner
+from scripts import hallucination
+import pandas as pd
 
 # Index Name
 index_name = "earnings-call"
@@ -61,12 +64,14 @@ if "metadata" not in st.session_state.keys():
 if "retriever" not in st.session_state.keys():
     st.session_state.retriever = st.session_state.index.as_retriever(search_kwargs={"filter": st.session_state.metadata, "k": 4})
     st.session_state.chain = get_expression_chain(retriever=st.session_state.retriever)
+    hallucination.init(rag_pipeline=st.session_state.chain)
 
 # Updating filters and chat engine if metadata is updated and updating session metadata also
 if st.session_state.metadata != metadata:
     st.session_state.metadata = metadata
     st.session_state.retriever = st.session_state.index.as_retriever(search_kwargs={"filter": st.session_state.metadata, "k": 4})
     st.session_state.chain = get_expression_chain(retriever=st.session_state.retriever)
+    hallucination.init(rag_pipeline=st.session_state.chain)
 
 st.sidebar.markdown("## Feedback Scale")
 feedback_option = (
@@ -82,8 +87,6 @@ for msg in st.session_state.messages:
     avatar = "🦜" if msg.get("type") == "ai" else None
     with st.chat_message(msg.get("type"), avatar=avatar):
         st.markdown(msg.get("content"))
-        # if msg.get("type") == "ai":
-        #     st.markdown("Relevant Context:\n\n" + msg.get("context"))
 
 
 if prompt := st.chat_input(placeholder="Ask me a question!"):
@@ -94,31 +97,48 @@ if prompt := st.chat_input(placeholder="Ask me a question!"):
             message_placeholder = st.empty()
             full_response = ""
             # Define the basic input structure for the chains
+            # Scanning the prompt
+            scanned_prompt = prompt_scanner(prompt=prompt)
+            st.dataframe(scanned_prompt,use_container_width=True,hide_index=True)
+            
             input_dict = {"query_str": prompt}
             with collect_runs() as cb:
                 full_response = st.session_state.chain.invoke(prompt)
-                context = "\n\n".join([doc.page_content for doc in full_response.get("context_str")])
                 st.session_state.messages.append({
                     "type": "ai",
-                    "content": full_response.get("answer"), 
-                    "context": context
+                    "content": full_response.get("answer")
                 })
                 st.session_state.run_id = cb.traced_runs[0].id
-            # message_placeholder.markdown(full_response.get("answer") + "\n\n" + "Relevant Context: \n\n" + context)
+
+            # Scanning the response
+            scanned_response = response_scanner(response=full_response.get("answer"))
+            
+            # Checking for hallucination
+            hallucination_result = hallucination.consistency_check(prompt=prompt,response=full_response.get("answer"))
+
+            other_features = [
+                {'Metrics': 'Hallucination Score', 'Value': str(round(hallucination_result['final_score'] * 100, 2)) + '%'},
+                {'Metrics': 'Interpretability', 'Value': 'See the context below'}]
+            
+            other_features_df = pd.DataFrame(other_features)
+
+            # Making combined response
+            combined_response = pd.concat([scanned_response, other_features_df], ignore_index=True)
+            
+            # Displaying the combined response in the frontend
+            st.dataframe(combined_response,use_container_width=True,hide_index=True)
+
+            meta_data_for_user_context = {}
+            for index, item in enumerate(full_response.get('context_str')):
+                    meta_data_for_user_context[f'Retrived_Chunk_{index+1}'] = item.metadata
+                    meta_data_for_user_context[f'Retrived_Chunk_{index+1}'].update({"source": item.page_content})
+                    
+                    # showing metadata for user context
+                    st.dataframe(pd.Series(meta_data_for_user_context[f'Retrived_Chunk_{index+1}']), use_container_width=True, column_config={1: "Retrived Chunk"})
+
+            st.write(scanned_response.iloc[1]["Value"].replace("$", "\$"))
 
             message_placeholder.markdown(full_response.get("answer"))
-                                         
-            # new code 
-            out = [doc.page_content for doc in full_response.get("context_str")]
-            # st.write("Retrieved context")
-            # for content in out: 
-            #     st.write(content)
-            st.title("Retrieved context for more transparency 😊")
-            for idx, content in enumerate(out, start=1):
-                st.write(f"Context {idx}:")
-                st.markdown("")
-                st.write(content)
-                st.markdown("---")
 
 if st.session_state.get("run_id"):
     run_id = st.session_state.run_id

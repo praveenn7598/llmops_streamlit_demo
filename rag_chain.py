@@ -3,33 +3,20 @@ from langchain_core.runnables import Runnable, RunnableMap
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableParallel
-## New code
-from langchain.retrievers.multi_query import MultiQueryRetriever
 
 def get_expression_chain(
     retriever
 ) -> Runnable:
     """Return a chain defined primarily in LangChain Expression Language"""
 
-    ## New Code -- Added new instruction in my prompt 
-    ## 3. If you are unable to locate the context, please state 'I don't know'. 
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", "You are an expert Q&A system that is trusted around the world.\nAlways answer the query using the provided context information, and not prior knowledge.\nSome rules to follow:\n1. Never directly reference the given context in your answer.\n2. Avoid statements like 'Based on the context, ...' or 'The context information ...' or anything along those lines.\n3. 3. If you are unable to locate the context, please state 'I don't know'. "),
+            ("system", "You are an expert Q&A system that is trusted around the world.\nAlways answer the query using the provided context information, and not prior knowledge.\nSome rules to follow:\n1. Never directly reference the given context in your answer.\n2. Avoid statements like 'Based on the context, ...' or 'The context information ...' or anything along those lines."),
             ("human", "Context information is below.\n---------------------\n{context_str}\n---------------------\nGiven the context information and not prior knowledge, answer the query.\nQuery: {query_str}\nAnswer: "),
         ]
     )
 
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-    ## Adding New code Using Llama 3
-    # llm = ChatOpenAI(
-    #     model="meta-llama/Meta-Llama-3-8B-Instruct",
-    #     api_key="Bearer thisisprivatetoken",
-    #     base_url="https://8000-01hyfe6g768yzkwm3qh3vnqv99.cloudspaces.litng.ai/v1",
-    #     temperature=0 )
-    
-    ## New code with Multi Query Retriever
-    # llm = MultiQueryRetriever.from_llm(retriever=retriever, llm=llm)
     
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
